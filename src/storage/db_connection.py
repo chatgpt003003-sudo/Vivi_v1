@@ -53,3 +53,50 @@ class DatabaseConnection:
     @classmethod
     def return_connection(cls, connection):
         cls._connection_pool.putconn(connection)
+
+    @classmethod
+    def initialize_schema(cls):
+        """
+        Auto-create database schema if it doesn't exist.
+        This prevents UndefinedTable errors on first deployment.
+        """
+        try:
+            conn = cls.get_connection()
+            cursor = conn.cursor()
+
+            # Check if celebrity_data table exists
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'celebrity_data'
+                )
+            """)
+            table_exists = cursor.fetchone()[0]
+
+            if not table_exists:
+                # Create table and indexes
+                cursor.execute("""
+                    CREATE TABLE celebrity_data (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        cleaned_paragraph TEXT,
+                        source TEXT,
+                        sentiment DECIMAL(5,2),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+
+                # Create indexes for faster queries
+                cursor.execute("CREATE INDEX idx_celebrity_name ON celebrity_data(name)")
+                cursor.execute("CREATE INDEX idx_sentiment ON celebrity_data(sentiment)")
+                cursor.execute("CREATE INDEX idx_created_at ON celebrity_data(created_at)")
+
+                conn.commit()
+                print("✓ Database schema created successfully")
+
+            cursor.close()
+            cls.return_connection(conn)
+
+        except Exception as e:
+            print(f"⚠️  Schema initialization error: {e}")
+            # Don't fail - table might already exist or be accessible

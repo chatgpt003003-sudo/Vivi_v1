@@ -376,4 +376,6 @@ def main():
     """)
 
 if __name__ == "__main__":
+    # Initialize database schema on app startup (creates tables if missing)
+    DatabaseConnection.initialize_schema()
     main()
