@@ -77,7 +77,11 @@ logs/
 *~
 
 # Streamlit
-.streamlit/
+# Ignore secrets but allow config files
+.streamlit/secrets.toml
+.streamlit/secrets.toml.local
+!.streamlit/config.toml
+!.streamlit/secrets.toml.example
 
 # Project specific
 postgres.log

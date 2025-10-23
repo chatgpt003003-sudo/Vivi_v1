@@ -2,6 +2,25 @@
 
 A real-time celebrity sentiment analysis system for quantifying celebrity impact in Taiwan. The system collects data from Google Search, processes it using AI text cleaning and sentiment analysis, stores it in PostgreSQL, and visualizes results through an interactive Streamlit dashboard.
 
+## 🚀 Quick Start
+
+Get started in 30 seconds:
+
+```bash
+# 1. Clone and setup
+git clone https://github.com/chatgpt003003-sudo/Vivi_v1.git
+cd Vivi_v1
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env  # Configure your API keys
+
+# 2. Launch everything with one command
+./vivi
+```
+
+That's it! The script will handle database setup, data collection, and launch the dashboard.
+
 ## Features
 
 - **Real-time Data Collection**: Google Search API integration for last 24 hours of celebrity mentions
@@ -11,6 +30,7 @@ A real-time celebrity sentiment analysis system for quantifying celebrity impact
 - **Celebrity Management**: 100 Taiwan celebrities with automated discovery
 - **Historical Tracking**: Track sentiment changes over time
 - **Robust Architecture**: Error handling, logging, and connection pooling
+- **Single-Command Launch**: `./vivi` runs the entire operation
 
 ## Tech Stack
 
@@ -55,6 +75,8 @@ vivi/
 ├── tests/
 │   ├── unit/                # Unit tests
 │   └── integration/         # Integration tests
+├── vivi                     # Main CLI control script
+├── vivi.sh                  # Bash wrapper for CLI
 ├── requirements.txt
 ├── .env.example             # Environment template
 ├── CLAUDE.md               # Claude Code instructions
@@ -95,27 +117,82 @@ cp .env.example .env
 # Edit .env with your API keys and database credentials
 ```
 
-5. **Initialize database**
+5. **Start PostgreSQL** (example for macOS with Homebrew)
 ```bash
-# Start PostgreSQL (example for Homebrew on macOS)
 brew services start postgresql@14
+```
 
-# Create database and schema
+That's it! Now run:
+
+```bash
+./vivi
+```
+
+The script will automatically:
+- Create the database and schema if needed
+- Collect sample data from celebrities
+- Launch the interactive dashboard
+
+### Manual Database Setup
+
+If you prefer to initialize the database manually:
+
+```bash
 psql -U your_username -c "CREATE DATABASE celebrity_index;"
 psql -U your_username -d celebrity_index -f src/storage/schema.sql
 ```
 
 ## Usage
 
-### Launch Dashboard
+### Quick Start (One-Line Launch)
+
+The simplest way to run the entire operation:
+
+```bash
+./vivi
+```
+
+Or if you prefer bash:
+
+```bash
+./vivi.sh
+```
+
+This will automatically:
+1. ✓ Check environment and dependencies
+2. ✓ Initialize database (if needed)
+3. ✓ Collect sample celebrity data
+4. ✓ Launch the interactive dashboard
+
+Access the dashboard at: **http://localhost:8502**
+
+### Individual Commands
+
+You can also run specific operations:
+
+```bash
+# Environment check only
+./vivi check
+
+# Setup database only
+./vivi setup
+
+# Collect data only
+./vivi collect
+
+# Launch UI only (if data already exists)
+./vivi ui
+```
+
+### Manual Launch (Traditional Method)
+
+If you prefer to run components separately:
 
 ```bash
 ./scripts/run_ui.sh
 # Or directly:
 venv/bin/streamlit run src/ui/app.py
 ```
-
-Access the dashboard at: **http://localhost:8502**
 
 ### Collect Celebrity Data
 
