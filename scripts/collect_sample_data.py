@@ -23,9 +23,9 @@ def main():
     print(f"✓ Loaded {len(celebrities)} celebrities")
 
     # Process a sample batch
-    sample_size = 10
+    sample_size = 100
     print(f"\nProcessing {sample_size} celebrities...")
-    print("This will take approximately 1-2 minutes...\n")
+    print("This will take approximately 15-30 minutes...\n")
 
     summary = pipeline.process_multiple_celebrities(celebrities, limit=sample_size)
 
