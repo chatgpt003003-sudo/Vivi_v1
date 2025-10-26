@@ -25,9 +25,15 @@ def main():
     # Process a sample batch
     sample_size = 100
     print(f"\nProcessing {sample_size} celebrities...")
-    print("This will take approximately 15-30 minutes...\n")
+    print("Using parallel processing for faster data collection...\n")
+    print("With parallel processing (4-8 workers):")
+    print("  Estimated time: 3-5 minutes (vs 15-30 minutes sequential)\n")
 
-    summary = pipeline.process_multiple_celebrities(celebrities, limit=sample_size)
+    summary = pipeline.process_multiple_celebrities(
+        celebrities,
+        limit=sample_size,
+        use_parallel=True  # Enable parallel processing
+    )
 
     print("\n" + "=" * 60)
     print("Sample Data Collection Complete")

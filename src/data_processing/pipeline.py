@@ -3,7 +3,10 @@ from src.data_processing.text_cleaner import TextCleaner
 from src.data_processing.sentiment_analyzer import SentimentAnalyzer
 from src.storage.db_connection import DatabaseConnection
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
+import psutil
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +15,39 @@ class DataPipeline:
         self.collector = GoogleSearchCollector()
         self.cleaner = TextCleaner()
         self.analyzer = SentimentAnalyzer()
+
+    @staticmethod
+    def get_optimal_workers(max_workers=None):
+        """
+        Calculate optimal number of worker threads based on system resources.
+        Returns a reasonable worker count that won't overwhelm the system.
+        """
+        if max_workers:
+            return max_workers
+
+        try:
+            # Get number of CPU cores
+            cpu_count = os.cpu_count() or 4
+
+            # Get available memory in GB
+            memory = psutil.virtual_memory()
+            available_gb = memory.available / (1024 ** 3)
+
+            # Conservative: 1 worker per CPU core, but max 8
+            # Reduce if memory is limited (< 2GB available)
+            base_workers = min(cpu_count, 8)
+
+            if available_gb < 2:
+                base_workers = min(base_workers, 2)
+            elif available_gb < 4:
+                base_workers = min(base_workers, 4)
+
+            logger.info(f"System info: {cpu_count} CPUs, {available_gb:.1f}GB available → {base_workers} workers")
+            return base_workers
+
+        except Exception as e:
+            logger.warning(f"Could not detect system resources, using 4 workers: {e}")
+            return 4
 
     def process_celebrity(self, celebrity_name, num_results=10):
         """
@@ -91,51 +127,111 @@ class DataPipeline:
             cursor.close()
             DatabaseConnection.return_connection(conn)
 
-    def process_multiple_celebrities(self, celebrity_list, limit=None):
+    def process_multiple_celebrities(self, celebrity_list, limit=None, max_workers=None, use_parallel=True):
         """
-        Process multiple celebrities
-        celebrity_list: List of celebrity names or dicts with 'name' key
-        limit: Maximum number to process (None = all)
+        Process multiple celebrities with optional parallel processing
+
+        Args:
+            celebrity_list: List of celebrity names or dicts with 'name' key
+            limit: Maximum number to process (None = all)
+            max_workers: Number of worker threads (None = auto-detect based on system)
+            use_parallel: Enable parallel processing (default: True)
 
         Returns: dict with summary statistics
         """
-        logger.info(f"Processing multiple celebrities (limit: {limit or 'none'})...")
-
-        processed = []
-        failed = []
-        count = 0
-
+        # Prepare celebrity list
+        celeb_names = []
         for celeb in celebrity_list:
-            # Handle both string names and dict format
             name = celeb if isinstance(celeb, str) else celeb.get('name')
-
-            if limit and count >= limit:
-                logger.info(f"Reached limit of {limit} celebrities")
+            celeb_names.append(name)
+            if limit and len(celeb_names) >= limit:
                 break
 
+        total_count = len(celeb_names)
+        logger.info(f"Processing {total_count} celebrities (parallel={use_parallel}, limit={limit or 'none'})...")
+
+        if not use_parallel or total_count <= 1:
+            # Fall back to sequential processing
+            return self._process_sequential(celeb_names)
+
+        # Use parallel processing
+        return self._process_parallel(celeb_names, max_workers)
+
+    def _process_sequential(self, celeb_names):
+        """Process celebrities sequentially"""
+        processed = []
+        failed = []
+
+        for idx, name in enumerate(celeb_names, 1):
             try:
+                logger.info(f"[{idx}/{len(celeb_names)}] Processing {name}...")
                 result = self.process_celebrity(name)
                 if result:
                     processed.append(result)
                 else:
                     failed.append(name)
-
-                count += 1
-
             except Exception as e:
                 logger.error(f"✗ Error processing {name}: {str(e)}")
                 failed.append(name)
 
+        return self._build_summary(processed, failed)
+
+    def _process_parallel(self, celeb_names, max_workers=None):
+        """Process celebrities in parallel using ThreadPoolExecutor"""
+        processed = []
+        failed = []
+
+        # Determine optimal worker count
+        num_workers = self.get_optimal_workers(max_workers)
+        num_workers = min(num_workers, len(celeb_names))
+
+        logger.info(f"Starting parallel processing with {num_workers} workers...")
+
+        try:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                # Submit all tasks
+                future_to_name = {
+                    executor.submit(self.process_celebrity, name): name
+                    for name in celeb_names
+                }
+
+                # Process completed tasks as they finish
+                completed = 0
+                for future in as_completed(future_to_name):
+                    completed += 1
+                    name = future_to_name[future]
+
+                    try:
+                        result = future.result()
+                        if result:
+                            processed.append(result)
+                        else:
+                            failed.append(name)
+                        logger.info(f"Progress: [{completed}/{len(celeb_names)}] ✓ {name}")
+
+                    except Exception as e:
+                        logger.error(f"Progress: [{completed}/{len(celeb_names)}] ✗ {name}: {str(e)}")
+                        failed.append(name)
+
+        except Exception as e:
+            logger.error(f"Parallel execution error: {str(e)}, falling back to sequential processing")
+            return self._process_sequential(celeb_names)
+
+        return self._build_summary(processed, failed)
+
+    def _build_summary(self, processed, failed):
+        """Build processing summary"""
+        total = len(processed) + len(failed)
         summary = {
-            'total_attempted': count,
+            'total_attempted': total,
             'successful': len(processed),
             'failed': len(failed),
-            'success_rate': len(processed) / count * 100 if count > 0 else 0,
+            'success_rate': len(processed) / total * 100 if total > 0 else 0,
             'processed': processed,
             'failed_names': failed
         }
 
-        logger.info(f"✓ Processing complete: {len(processed)}/{count} successful ({summary['success_rate']:.1f}%)")
+        logger.info(f"✓ Processing complete: {len(processed)}/{total} successful ({summary['success_rate']:.1f}%)")
 
         return summary
 
