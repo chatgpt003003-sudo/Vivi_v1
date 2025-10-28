@@ -1,6 +1,6 @@
 # Celebrity Index Collector v1.0
 
-A real-time celebrity sentiment analysis system for quantifying celebrity impact in Taiwan. The system collects data from Google Search, processes it using AI text cleaning and sentiment analysis, stores it in PostgreSQL, and visualizes results through an interactive Streamlit dashboard.
+A real-time celebrity sentiment analysis system for quantifying celebrity impact in Taiwan. Collects 24-hour search data on 100 Taiwan celebrities via Google Search API, processes text using Google Gemini AI for cleaning and sentiment analysis, stores results in PostgreSQL (local or Neon Cloud), and visualizes with an interactive Streamlit dashboard.
 
 ## 🚀 Quick Start
 
@@ -23,30 +23,35 @@ That's it! The script will handle database setup, data collection, and launch th
 
 ## Features
 
-- **Real-time Data Collection**: Google Search API integration for last 24 hours of celebrity mentions
-- **AI-Powered Processing**: Google Gemini API for text cleaning and sentiment analysis
-- **Sentiment Scoring**: -1.0 (negative) to +1.0 (positive) sentiment scale
-- **Interactive Dashboard**: Streamlit UI with rankings, trends, and statistics
-- **Celebrity Management**: 100 Taiwan celebrities with automated discovery
-- **Historical Tracking**: Track sentiment changes over time
-- **Robust Architecture**: Error handling, logging, and connection pooling
-- **Single-Command Launch**: `./vivi` runs the entire operation
+- **Real-time Data Collection**: Google Search API for last 24 hours of celebrity mentions (Traditional Chinese)
+- **AI-Powered Processing**: Google Gemini 2.5 Flash for text cleaning and sentiment analysis
+- **Sentiment Scoring**: -1.0 (negative) to +1.0 (positive) scale with thresholds (>0.3 positive, <-0.3 negative)
+- **Interactive Dashboard**: Streamlit with 3 views - Rankings, Trends, and Statistics
+- **100 Taiwan Celebrities**: Complete seed list with categories (singers, actors, athletes, politicians, etc)
+- **Parallel Processing**: Concurrent celebrity processing with auto-worker detection
+- **Cloud-Ready**: Local PostgreSQL or Neon PostgreSQL Cloud deployment
+- **Auto-Schema**: Database table auto-creation on first run
+- **Single-Command Launch**: `./vivi` handles setup, collection, and UI launch
+- **Connection Pooling**: PostgreSQL connection management (1-20 connections)
 
 ## Tech Stack
 
 **Backend**
-- Python 3.13
-- PostgreSQL 14.19
-- Google Search API
+- Python 3.13+
+- PostgreSQL 14+ (Local or Neon Cloud)
+- Google Custom Search API
 - Google Gemini 2.5 Flash API
 
 **Frontend**
-- Streamlit 1.50.0
-- Plotly 6.3.1
+- Streamlit 1.50.0 (port 8502)
+- Plotly 6.3.1 (interactive charts)
 
-**Data Processing**
-- pandas, numpy
-- psycopg2 (PostgreSQL driver)
+**Libraries**
+- `google-api-python-client` - Google Search integration
+- `google-generativeai` - Gemini AI processing
+- `psycopg2-binary` - PostgreSQL driver
+- `pandas`, `numpy` - Data processing
+- `concurrent.futures` - Parallel processing
 
 ## Project Structure
 
@@ -222,41 +227,52 @@ summary = pipeline.process_multiple_celebrities(celebs, limit=20)
 
 ## Dashboard Features
 
+Access at **http://localhost:8502**
+
 ### Rankings View
-- Celebrity sentiment rankings
-- Sortable data tables (highest/lowest/most recent)
-- Top 20 bar chart visualization
-- Celebrity detail views with summaries
+- Celebrity sentiment rankings (latest records with deduplication)
+- Sortable: highest/lowest/most recent
+- Top 20 bar chart (color-scaled by sentiment: red=negative, green=positive)
+- Expandable celebrity details with cleaned text summary and source
+- Metrics: Total celebrities, average sentiment, positive/neutral/negative counts
 
 ### Trend View
-- Historical sentiment tracking
-- Interactive line charts
-- Date range selection (1-30 days)
-- Positive/negative threshold indicators
+- Historical sentiment tracking over time
+- Interactive line chart with markers
+- Configurable date range selection (1-30 days)
+- Threshold lines for positive/neutral/negative zones
+- Historical data table with all records in date range
 
 ### Statistics View
-- Total records and unique celebrities
+- Total records and unique celebrities processed
 - Average sentiment score
-- Sentiment distribution pie chart
-- Recent activity feed
+- Sentiment distribution donut chart
+- Positive/neutral/negative breakdown counts
+- Recent activity feed (latest 10 records)
 
 ## Configuration
 
 ### Environment Variables (.env)
 
+**For Local Development:**
 ```bash
 # Google APIs
 GOOGLE_API_KEY=your_google_api_key
 GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
 GEMINI_API_KEY=your_gemini_api_key
 
-# Database
+# Local PostgreSQL Database
 DB_NAME=celebrity_index
-DB_USER=your_username
+DB_USER=postgres
 DB_PASSWORD=your_password
 DB_HOST=localhost
 DB_PORT=5432
 ```
+
+**For Streamlit Cloud Deployment:**
+- Create `secrets.toml` in `.streamlit/` with same keys
+- Database: Neon PostgreSQL (auto-detected and used)
+- Connection: Hardcoded Neon connection string for Cloud
 
 ### Celebrity Seed List
 
@@ -297,25 +313,47 @@ pytest tests/integration/
 
 ### Code Structure
 
-- **Data Collection**: `src/data_collection/google_search.py`
-  - Collects search results from last 24 hours
+**Data Collection** (`src/data_collection/`)
+- `google_search.py`: Google Custom Search API wrapper
+  - Last 24 hours filtering (`dateRestrict='d1'`)
+  - Traditional Chinese language (`lr='lang_zh-TW'`)
   - Rate limiting: 1 second between requests
-  - Language filter: Traditional Chinese (zh-TW)
+  - Methods: `search_celebrity()`, `get_total_mentions()`
+- `celebrity_manager.py`: 100-celebrity management
+  - Load from `config/celebrity_seed_list.json`
+  - Validate mention thresholds (100+ required)
+  - Batch validation support
 
-- **Text Cleaning**: `src/data_processing/text_cleaner.py`
-  - Uses Google Gemini 2.5 Flash
-  - Summarizes and cleans search results
-  - Removes ads and duplicate content
-
-- **Sentiment Analysis**: `src/data_processing/sentiment_analyzer.py`
-  - Gemini-powered sentiment scoring
-  - Range: -1.0 (very negative) to +1.0 (very positive)
+**Data Processing** (`src/data_processing/`)
+- `pipeline.py`: Main orchestrator with **parallel processing**
+  - `ThreadPoolExecutor` for concurrent processing (1-8 workers)
+  - Auto-detect optimal worker count based on CPU/memory
+  - Methods: `process_celebrity()`, `process_multiple_celebrities()`
+  - Fallback to sequential if parallel fails
+  - Returns summary with success rates
+- `text_cleaner.py`: Google Gemini text summarization
+  - Gemini 2.5 Flash model
+  - Summarizes to 200 chars max
+  - Extracts 3-5 key points
+  - Graceful fallback on API failure
+- `sentiment_analyzer.py`: Gemini sentiment scoring
+  - Score range: -1.0 to +1.0
   - Thresholds: >0.3 positive, <-0.3 negative
+  - Robust number extraction from API responses
 
-- **Pipeline**: `src/data_processing/pipeline.py`
-  - End-to-end processing workflow
-  - Handles errors and logging
-  - Batch processing support
+**Storage** (`src/storage/`)
+- `db_connection.py`: PostgreSQL connection management
+  - Connection pooling (1-20 connections)
+  - **Auto-schema initialization** on startup
+  - Supports local and Neon Cloud databases
+  - Methods: `get_connection()`, `return_connection()`, `initialize_schema()`
+
+**UI** (`src/ui/`)
+- `app.py`: Streamlit interactive dashboard
+  - Three view modes: Rankings, Trends, Statistics
+  - Real-time data queries with ROW_NUMBER deduplication
+  - Plotly visualizations (bar, line, donut charts)
+  - Database auto-initialization on first run
 
 ### Adding New Features
 
@@ -360,16 +398,27 @@ source venv/bin/activate
 
 ## Performance
 
-- **Single celebrity processing**: ~5-10 seconds
-- **Batch (10 celebrities)**: ~1-2 minutes
-- **Database queries**: <500ms with indexing
+- **Single celebrity processing**: ~5-10 seconds (search + clean + sentiment)
+- **Batch (10 celebrities)**: ~30-60 seconds (sequential) or ~10-15 seconds (parallel)
+- **Batch (100 celebrities)**: ~2-3 minutes (parallel with 4-8 workers)
+- **Database queries**: <100ms with connection pooling and indexes
 - **Dashboard load time**: 1-2 seconds
 
-## API Usage
+## API Rate Limits & Usage
 
-- Google Search API calls: ~2 per celebrity
-- Gemini API calls: ~2 per celebrity (cleaning + sentiment)
-- Total per celebrity: ~4 API calls
+**Google Search API**
+- Free tier: 100 queries/day
+- ~2 searches per celebrity
+- Total: ~200 API calls for 100 celebrities daily
+
+**Google Gemini 2.5 Flash**
+- Rate limit: 15 requests/minute
+- ~2 calls per celebrity (text cleaning + sentiment)
+- Total: ~200 API calls for 100 celebrities daily
+
+**PostgreSQL**
+- Connection pooling: 1-20 active connections
+- Dashboard queries: Optimized with indexes on `name`, `sentiment`, `created_at`
 
 ## Compliance & Ethics
 
@@ -379,21 +428,34 @@ source venv/bin/activate
 - Source attribution maintained
 - Blacklist support for restricted sources
 
-## Roadmap
+## Status & Roadmap
 
-### Test 2 (Planned)
-- Scale to daily automation for 100 celebrities
-- Additional data sources (social media)
-- Multi-metric celebrity index
-- Enhanced analytics and correlations
-- Export functionality (CSV, PDF)
+### ✅ Completed (Test 1)
+- Data collection from 100 Taiwan celebrities (Google Search)
+- Google Gemini text cleaning and sentiment analysis
+- PostgreSQL storage with connection pooling
+- Interactive Streamlit dashboard with 3 views
+- Parallel processing (1-8 worker threads)
+- Local and Neon Cloud database support
+- Auto-schema initialization
+- Unit and integration tests
+- Comprehensive CLI (`./vivi` one-liner)
 
-### Future Enhancements
-- Real-time alerts for sentiment changes
-- Category-based analysis
-- Comparison tools
+### 🔄 In Progress
+- Streamlit Cloud deployment refinement
+- Optional `psutil` dependency for resource detection
+- Port 8502 configuration
+
+### 📋 Test 2 / Future Enhancements
+- Daily automated data collection scheduling
+- Additional data sources (social media APIs)
+- Category-based sentiment aggregation
+- Export functionality (CSV, JSON, PDF)
+- Real-time alerts for sentiment changes >0.5 points
+- Comparison tools between celebrities
+- Advanced analytics and trend correlations
 - Mobile-responsive UI
-- API endpoints for external access
+- REST API endpoints for external access
 
 ## Contributing
 

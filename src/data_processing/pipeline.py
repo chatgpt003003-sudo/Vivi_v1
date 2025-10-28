@@ -5,8 +5,13 @@ from src.storage.db_connection import DatabaseConnection
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
-import psutil
 import os
+
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 logger = logging.getLogger(__name__)
 
